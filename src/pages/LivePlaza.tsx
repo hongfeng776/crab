@@ -3,6 +3,7 @@ import { Radio, Flame, Music, Gamepad2, Mountain, Heart, Plus } from 'lucide-rea
 import { useNavigate } from 'react-router-dom';
 import LiveCard from '@/components/ui/LiveCard';
 import { useAppStore } from '@/store';
+import CoinBalance from '@/components/ui/CoinBalance';
 import type { LiveRoom } from '../../shared/types';
 
 const categories = [
@@ -49,13 +50,16 @@ export default function LivePlaza() {
             <span className="text-brand-cyan"> {(totalViewers / 1000).toFixed(1)}k</span> 人在线观看
           </p>
         </div>
-        <button
-          onClick={() => alert('开播功能即将上线')}
-          className="flex items-center gap-2 h-11 px-5 rounded-xl gradient-bg text-white font-semibold shadow-lg shadow-brand-purple/30 hover:shadow-xl transition-all"
-        >
-          <Plus className="w-5 h-5" />
-          开启直播
-        </button>
+        <div className="flex items-center gap-3">
+          <CoinBalance />
+          <button
+            onClick={() => alert('开播功能即将上线')}
+            className="flex items-center gap-2 h-11 px-5 rounded-xl gradient-bg text-white font-semibold shadow-lg shadow-brand-purple/30 hover:shadow-xl transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            开启直播
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-2">

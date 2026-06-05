@@ -9,6 +9,7 @@ interface AppState {
   conversations: Conversation[];
   currentCall: CallSession | null;
   danmakuMessages: DanmakuMessage[];
+  coinBalance: number;
   
   setCurrentUser: (user: User | null) => void;
   setLoggedIn: (status: boolean) => void;
@@ -21,9 +22,12 @@ interface AppState {
   updateViewerCount: (roomId: string, count: number) => void;
   incrementLikeCount: (roomId: string) => void;
   markConversationRead: (conversationId: string) => void;
+  addCoins: (amount: number) => void;
+  deductCoins: (amount: number) => boolean;
+  setCoinBalance: (amount: number) => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   currentUser: null,
   isLoggedIn: false,
   nearbyUsers: [],
@@ -31,6 +35,7 @@ export const useAppStore = create<AppState>((set) => ({
   conversations: [],
   currentCall: null,
   danmakuMessages: [],
+  coinBalance: 8888,
 
   setCurrentUser: (user) => set({ currentUser: user }),
   setLoggedIn: (status) => set({ isLoggedIn: status }),
@@ -61,5 +66,31 @@ export const useAppStore = create<AppState>((set) => ({
     conversations: state.conversations.map(c =>
       c.id === conversationId ? { ...c, unreadCount: 0 } : c
     )
+  })),
+
+  addCoins: (amount) => set((state) => ({
+    coinBalance: state.coinBalance + amount,
+    currentUser: state.currentUser
+      ? { ...state.currentUser, coins: (state.currentUser.coins || 0) + amount }
+      : state.currentUser,
+  })),
+
+  deductCoins: (amount) => {
+    const { coinBalance } = get();
+    if (coinBalance < amount) return false;
+    set((state) => ({
+      coinBalance: state.coinBalance - amount,
+      currentUser: state.currentUser
+        ? { ...state.currentUser, coins: Math.max((state.currentUser.coins || 0) - amount, 0) }
+        : state.currentUser,
+    }));
+    return true;
+  },
+
+  setCoinBalance: (amount) => set((state) => ({
+    coinBalance: amount,
+    currentUser: state.currentUser
+      ? { ...state.currentUser, coins: amount }
+      : state.currentUser,
   })),
 }));

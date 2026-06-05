@@ -13,7 +13,19 @@ export interface User {
   lastActive: string;
   location: { lat: number; lng: number };
   faceScore?: number;
+  coins?: number;
 }
+
+export interface RechargePackage {
+  id: string;
+  coins: number;
+  price: number;
+  bonus?: number;
+  isHot?: boolean;
+  isDiscount?: boolean;
+}
+
+export type PaymentMethod = 'wechat' | 'alipay' | 'qq';
 
 export interface LiveRoom {
   id: string;

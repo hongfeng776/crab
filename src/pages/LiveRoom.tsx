@@ -13,10 +13,15 @@ import {
   Video,
   Radio,
   MessageCircle,
+  Check,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { getSocket } from '@/lib/socket';
 import { mockGifts } from '@/lib/mockData';
+import GiftQuantityPicker from '@/components/ui/GiftQuantityPicker';
+import CoinBalance from '@/components/ui/CoinBalance';
+import RechargeModal from '@/components/ui/RechargeModal';
 import type { DanmakuMessage, Gift as GiftType } from '../../shared/types';
 
 export default function LiveRoom() {
@@ -27,12 +32,17 @@ export default function LiveRoom() {
   const [showGiftPanel, setShowGiftPanel] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
   const [likeCount, setLikeCount] = useState(0);
-  const [flyingGifts, setFlyingGifts] = useState<{ id: number; gift: GiftType }[]>([]);
+  const [flyingGifts, setFlyingGifts] = useState<{ id: number; gift: GiftType; count: number }[]>([]);
   const [likeBursts, setLikeBursts] = useState<number[]>([]);
+  const [selectedGift, setSelectedGift] = useState<GiftType | null>(null);
+  const [giftQuantity, setGiftQuantity] = useState(1);
+  const [showRechargeFromGift, setShowRechargeFromGift] = useState(false);
   const currentUser = useAppStore((s) => s.currentUser);
   const liveRooms = useAppStore((s) => s.liveRooms);
   const addDanmaku = useAppStore((s) => s.addDanmaku);
   const danmakuMessages = useAppStore((s) => s.danmakuMessages);
+  const coinBalance = useAppStore((s) => s.coinBalance);
+  const deductCoins = useAppStore((s) => s.deductCoins);
 
   const room = liveRooms.find((r) => r.id === roomId);
 
@@ -60,8 +70,8 @@ export default function LiveRoom() {
       setLikeCount((c) => c + 1);
     });
 
-    socket.on('receive_gift', ({ sender, gift }) => {
-      showGiftAnimation(gift);
+    socket.on('receive_gift', ({ sender, gift, count }) => {
+      showGiftAnimation(gift, count || 1);
     });
 
     if (room) {
@@ -109,26 +119,41 @@ export default function LiveRoom() {
     }, 1000);
   };
 
-  const sendGift = (gift: GiftType) => {
-    if (!currentUser || !roomId) return;
+  const totalGiftCost = selectedGift ? selectedGift.value * giftQuantity : 0;
+  const canAfford = totalGiftCost <= coinBalance;
+
+  const handleSendGift = () => {
+    if (!selectedGift || !currentUser || !roomId) return;
+    if (!canAfford) {
+      setShowRechargeFromGift(true);
+      return;
+    }
+    const ok = deductCoins(totalGiftCost);
+    if (!ok) {
+      setShowRechargeFromGift(true);
+      return;
+    }
     const socket = getSocket();
     socket.emit('send_gift', {
       roomId,
       userId: currentUser.id,
       userName: currentUser.nickname,
       userAvatar: currentUser.avatar,
-      gift,
+      gift: selectedGift,
+      count: giftQuantity,
     });
-    showGiftAnimation(gift);
+    showGiftAnimation(selectedGift, giftQuantity);
     setShowGiftPanel(false);
+    setSelectedGift(null);
+    setGiftQuantity(1);
   };
 
-  const showGiftAnimation = (gift: GiftType) => {
+  const showGiftAnimation = (gift: GiftType, count: number = 1) => {
     const id = Date.now();
-    setFlyingGifts((prev) => [...prev, { id, gift }]);
+    setFlyingGifts((prev) => [...prev, { id, gift, count }]);
     setTimeout(() => {
       setFlyingGifts((prev) => prev.filter((g) => g.id !== id));
-    }, 3000);
+    }, 3500);
   };
 
   if (!room) {
@@ -152,7 +177,7 @@ export default function LiveRoom() {
 
       <div className="relative h-screen flex">
         <div className="flex-1 flex flex-col">
-          <div className="flex items-center justify-between p-4">
+          <div className="flex items-center justify-between p-4 flex-wrap gap-3">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => navigate(-1)}
@@ -181,6 +206,7 @@ export default function LiveRoom() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <CoinBalance variant="dark" />
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-sm">
                 <Eye className="w-4 h-4 text-white/70" />
                 <span className="text-sm text-white">{viewerCount}</span>
@@ -213,13 +239,18 @@ export default function LiveRoom() {
             <div
               key={fg.id}
               className="absolute bottom-32 left-8"
-              style={{ animation: 'giftFly 3s ease-out forwards' }}
+              style={{ animation: 'giftFly 3.5s ease-out forwards' }}
             >
               <div className="flex items-center gap-3 px-5 py-3 rounded-2xl glass-strong">
                 <span className="text-5xl">{fg.gift.icon}</span>
                 <div>
                   <p className="text-white/70 text-xs">送出</p>
-                  <p className="text-white font-bold text-xl">{fg.gift.name}</p>
+                  <p className="text-white font-bold text-xl">
+                    {fg.gift.name}
+                    {fg.count > 1 && (
+                      <span className="text-yellow-400 ml-2">× {fg.count}</span>
+                    )}
+                  </p>
                 </div>
               </div>
             </div>
@@ -232,8 +263,8 @@ export default function LiveRoom() {
             }
             @keyframes giftFly {
               0% { opacity: 0; transform: translateX(-100px) scale(0.5); }
-              20% { opacity: 1; transform: translateX(0) scale(1); }
-              80% { opacity: 1; transform: translateX(0) scale(1); }
+              15% { opacity: 1; transform: translateX(0) scale(1); }
+              75% { opacity: 1; transform: translateX(0) scale(1); }
               100% { opacity: 0; transform: translateX(200px) translateY(-100px) scale(1.5); }
             }
           `}</style>
@@ -249,7 +280,11 @@ export default function LiveRoom() {
                     <div
                       key={msg.id}
                       className={`flex items-start gap-2 text-sm ${
-                        msg.type === 'system' ? 'text-brand-cyan' : msg.type === 'gift' ? 'text-yellow-400' : ''
+                        msg.type === 'system'
+                          ? 'text-brand-cyan'
+                          : msg.type === 'gift'
+                            ? 'text-yellow-400'
+                            : ''
                       }`}
                       style={{ animation: 'slideIn 0.3s ease-out' }}
                     >
@@ -278,7 +313,12 @@ export default function LiveRoom() {
                     <Send className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => setShowGiftPanel(true)}
+                    onClick={() => {
+                      setShowGiftPanel(true);
+                      if (!selectedGift && mockGifts.length > 0) {
+                        setSelectedGift(mockGifts[0]);
+                      }
+                    }}
                     className="w-11 h-11 rounded-full bg-yellow-500 flex items-center justify-center text-white shadow-lg shadow-yellow-500/30 hover:scale-110 transition-transform"
                   >
                     <Gift className="w-5 h-5" />
@@ -292,7 +332,7 @@ export default function LiveRoom() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center justify-between mt-3 px-2">
+            <div className="flex items-center justify-between mt-3 px-2 flex-wrap gap-3">
               <div className="flex items-center gap-4 text-white/60 text-sm">
                 <span className="flex items-center gap-1">
                   <Heart className="w-4 h-4 text-brand-pink fill-brand-pink" />
@@ -324,34 +364,142 @@ export default function LiveRoom() {
         <div className="absolute inset-0 z-50 flex items-end">
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowGiftPanel(false)}
+            onClick={() => {
+              setShowGiftPanel(false);
+              setSelectedGift(null);
+              setGiftQuantity(1);
+            }}
           />
-          <div className="relative w-full glass-strong rounded-t-3xl p-6" style={{ animation: 'slideUp 0.3s ease-out' }}>
+          <div
+            className="relative w-full glass-strong rounded-t-3xl p-6"
+            style={{ animation: 'slideUp 0.3s ease-out' }}
+          >
             <div className="flex items-center justify-between mb-5">
-              <h3 className="font-display text-xl font-bold">送礼物</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="font-display text-xl font-bold">送礼物</h3>
+                <CoinBalance variant="compact" showRecharge={false} />
+              </div>
               <button
-                onClick={() => setShowGiftPanel(false)}
-                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/70"
+                onClick={() => {
+                  setShowGiftPanel(false);
+                  setSelectedGift(null);
+                  setGiftQuantity(1);
+                }}
+                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/70 hover:bg-white/20"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="grid grid-cols-6 gap-4">
-              {mockGifts.map((gift) => (
-                <button
-                  key={gift.id}
-                  onClick={() => sendGift(gift)}
-                  className="flex flex-col items-center gap-2 p-3 rounded-2xl glass-light hover:bg-surface-hover hover:-translate-y-1 transition-all group"
-                >
-                  <span className="text-4xl group-hover:scale-125 transition-transform">{gift.icon}</span>
-                  <span className="text-sm font-medium text-white">{gift.name}</span>
-                  <span className="text-xs text-yellow-400">{gift.value} 币</span>
-                </button>
-              ))}
+
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-5">
+              {mockGifts.map((gift) => {
+                const isActive = selectedGift?.id === gift.id;
+                return (
+                  <button
+                    key={gift.id}
+                    onClick={() => setSelectedGift(gift)}
+                    className={`relative flex flex-col items-center gap-2 p-3 rounded-2xl transition-all ${
+                      isActive
+                        ? 'bg-gradient-to-br from-brand-purple/40 to-brand-pink/30 border-2 border-brand-purple shadow-lg shadow-brand-purple/20'
+                        : 'glass-light border-2 border-transparent hover:border-white/20'
+                    }`}
+                  >
+                    <span
+                      className={`text-4xl transition-transform ${
+                        isActive ? 'scale-125' : 'hover:scale-110'
+                      }`}
+                    >
+                      {gift.icon}
+                    </span>
+                    <span className="text-sm font-medium text-white">{gift.name}</span>
+                    <span className="text-xs text-yellow-400 font-semibold">
+                      {gift.value} 币
+                    </span>
+                    {isActive && (
+                      <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full gradient-bg flex items-center justify-center">
+                        <Check className="w-3 h-3 text-white" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
+
+            {selectedGift && (
+              <div className="glass-light rounded-2xl p-4 mb-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">{selectedGift.icon}</span>
+                    <div>
+                      <p className="font-semibold text-white">{selectedGift.name}</p>
+                      <p className="text-xs text-white/50">
+                        单价 {selectedGift.value} 币
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-white/50">合计</p>
+                    <p
+                      className={`text-xl font-bold ${
+                        canAfford ? 'text-yellow-400' : 'text-red-400'
+                      }`}
+                    >
+                      {totalGiftCost.toLocaleString()} 币
+                    </p>
+                  </div>
+                </div>
+                <GiftQuantityPicker
+                  value={giftQuantity}
+                  onChange={setGiftQuantity}
+                  max={canAfford ? undefined : Math.floor(coinBalance / selectedGift.value) || 1}
+                />
+                {!canAfford && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                    <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                    <p className="text-sm text-red-400 flex-1">
+                      金币不足，还需{' '}
+                      <span className="font-bold">
+                        {(totalGiftCost - coinBalance).toLocaleString()}
+                      </span>{' '}
+                      币
+                    </p>
+                    <button
+                      onClick={() => {
+                        setShowGiftPanel(false);
+                        setShowRechargeFromGift(true);
+                      }}
+                      className="h-8 px-4 rounded-lg gradient-bg text-white text-xs font-semibold"
+                    >
+                      立即充值
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={handleSendGift}
+              disabled={!selectedGift}
+              className={`w-full h-12 rounded-2xl font-bold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                canAfford
+                  ? 'gradient-bg text-white shadow-xl shadow-brand-purple/30 hover:shadow-2xl hover:shadow-brand-purple/40'
+                  : 'bg-gradient-to-r from-red-500 to-orange-500 text-white'
+              }`}
+            >
+              {selectedGift
+                ? canAfford
+                  ? `送出 ${selectedGift.name} × ${giftQuantity}  (${totalGiftCost} 币)`
+                  : '金币不足，去充值'
+                : '请选择礼物'}
+            </button>
           </div>
         </div>
       )}
+
+      <RechargeModal
+        open={showRechargeFromGift}
+        onClose={() => setShowRechargeFromGift(false)}
+      />
 
       <style>{`
         @keyframes slideUp {
