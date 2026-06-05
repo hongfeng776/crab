@@ -10,6 +10,7 @@ import {
   Loader2,
   AlertCircle,
   LocateFixed,
+  RefreshCw,
 } from 'lucide-react';
 import UserCard from '@/components/ui/UserCard';
 import { useAppStore } from '@/store';
@@ -17,10 +18,37 @@ import type { User } from '../../shared/types';
 
 const DEFAULT_CENTER = { lat: 39.9042, lng: 116.4074 };
 const DEFAULT_LOCATION_NAME = '北京 · 朝阳区';
-const MAP_LAT_RANGE = 0.08;
-const MAP_LNG_RANGE = 0.1;
+
+const MAP_VIEW_LAT_DELTA = 0.06;
+const MAP_VIEW_LNG_DELTA = 0.08;
 
 type LocatingStatus = 'idle' | 'loading' | 'success' | 'denied' | 'error';
+
+interface Viewport {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+  centerLat: number;
+  centerLng: number;
+}
+
+function buildViewport(centerLat: number, centerLng: number): Viewport {
+  return {
+    minLat: centerLat - MAP_VIEW_LAT_DELTA / 2,
+    maxLat: centerLat + MAP_VIEW_LAT_DELTA / 2,
+    minLng: centerLng - MAP_VIEW_LNG_DELTA / 2,
+    maxLng: centerLng + MAP_VIEW_LNG_DELTA / 2,
+    centerLat,
+    centerLng,
+  };
+}
+
+const GEOErrorCodeNames: Record<number, string> = {
+  1: '定位权限被拒绝，请在浏览器设置中允许位置访问',
+  2: '无法获取位置信息（位置服务不可用）',
+  3: '定位超时，请检查网络后重试',
+};
 
 export default function Nearby() {
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
@@ -33,6 +61,7 @@ export default function Nearby() {
   const [locatingStatus, setLocatingStatus] = useState<LocatingStatus>('idle');
   const [locatingError, setLocatingError] = useState<string>('');
 
+  const viewportRef = useRef<Viewport>(buildViewport(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const nearbyUsers = useAppStore((s) => s.nearbyUsers);
   const setNearbyUsers = useAppStore((s) => s.setNearbyUsers);
@@ -56,6 +85,12 @@ export default function Nearby() {
     loadUsers();
   }, [loadUsers]);
 
+  const updateCenter = useCallback((lat: number, lng: number, name?: string) => {
+    setCenter({ lat, lng });
+    viewportRef.current = buildViewport(lat, lng);
+    if (name) setLocationName(name);
+  }, []);
+
   const getCurrentLocation = useCallback(() => {
     if (!('geolocation' in navigator)) {
       setLocatingStatus('error');
@@ -64,64 +99,78 @@ export default function Nearby() {
     }
     setLocatingStatus('loading');
     setLocatingError('');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCenter({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        });
-        setLocationName(`GPS定位 (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`);
-        setLocatingStatus('success');
-        setTimeout(() => setLocatingStatus('idle'), 2000);
-      },
-      (err) => {
-        console.warn('Geolocation error:', err);
-        if (err.code === err.PERMISSION_DENIED) {
-          setLocatingStatus('denied');
-          setLocatingError('定位权限被拒绝，请在浏览器设置中允许');
-        } else if (err.code === err.POSITION_UNAVAILABLE) {
-          setLocatingStatus('error');
-          setLocatingError('无法获取位置信息');
-        } else {
-          setLocatingStatus('error');
-          setLocatingError('定位超时，请重试');
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      },
-    );
-  }, []);
+
+    const doLocate = (highAcc: boolean, attempt: number) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          updateCenter(
+            lat,
+            lng,
+            `GPS定位 (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+          );
+          setLocatingStatus('success');
+          setTimeout(() => setLocatingStatus('idle'), 2500);
+        },
+        (err) => {
+          console.warn(`Geolocation error (attempt ${attempt}):`, err.code, err.message);
+          if (highAcc && attempt === 1) {
+            doLocate(false, 2);
+            return;
+          }
+          const msg = GEOErrorCodeNames[err.code] || '定位失败，请稍后重试';
+          if (err.code === 1) {
+            setLocatingStatus('denied');
+          } else {
+            setLocatingStatus('error');
+          }
+          setLocatingError(msg);
+        },
+        {
+          enableHighAccuracy: highAcc,
+          timeout: highAcc ? 8000 : 15000,
+          maximumAge: 60000,
+        },
+      );
+    };
+
+    doLocate(true, 1);
+  }, [updateCenter]);
 
   const handleMapClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!mapContainerRef.current) return;
       const rect = mapContainerRef.current.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width;
-      const y = (e.clientY - rect.top) / rect.height;
-      const lng = center.lng - MAP_LNG_RANGE / 2 + x * MAP_LNG_RANGE;
-      const lat = center.lat + MAP_LAT_RANGE / 2 - y * MAP_LAT_RANGE;
-      setCenter({ lat, lng });
-      setLocationName(`自定义位置 (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      const vp = viewportRef.current;
+      const xRatio = clickX / rect.width;
+      const yRatio = clickY / rect.height;
+      const lng = vp.minLng + xRatio * (vp.maxLng - vp.minLng);
+      const lat = vp.maxLat - yRatio * (vp.maxLat - vp.minLat);
+      updateCenter(lat, lng, `自定义位置 (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
     },
-    [center],
+    [updateCenter],
   );
 
-  const projectToMap = useCallback(
-    (userLat: number, userLng: number) => {
-      const x = ((userLng - (center.lng - MAP_LNG_RANGE / 2)) / MAP_LNG_RANGE) * 100;
-      const y = ((center.lat + MAP_LAT_RANGE / 2 - userLat) / MAP_LAT_RANGE) * 100;
-      return { x, y };
-    },
-    [center],
-  );
+  const projectToMap = useCallback((userLat: number, userLng: number) => {
+    const vp = viewportRef.current;
+    const x = ((userLng - vp.minLng) / (vp.maxLng - vp.minLng)) * 100;
+    const y = ((vp.maxLat - userLat) / (vp.maxLat - vp.minLat)) * 100;
+    return { x, y };
+  }, []);
 
-  const radiusPixels = useMemo(() => {
-    const kmPerDegreeLat = 111;
-    const radiusLatDegree = radius / kmPerDegreeLat;
-    return (radiusLatDegree / MAP_LAT_RANGE) * 100;
+  const radiusCircleSize = useMemo(() => {
+    const vp = viewportRef.current;
+    const kmPerDegLat = 111;
+    const radiusDegLat = radius / kmPerDegLat;
+    const latPct = (radiusDegLat / (vp.maxLat - vp.minLat)) * 100;
+    const avgLat = (vp.minLat + vp.maxLat) / 2;
+    const kmPerDegLng = Math.cos((avgLat * Math.PI) / 180) * 111.32;
+    const radiusDegLng = radius / kmPerDegLng;
+    const lngPct = (radiusDegLng / (vp.maxLng - vp.minLng)) * 100;
+    return { widthPct: lngPct * 2, heightPct: latPct * 2 };
   }, [radius]);
 
   const filteredUsers = nearbyUsers.filter((u) => {
@@ -171,7 +220,7 @@ export default function Nearby() {
               </>
             ) : locatingStatus === 'denied' || locatingStatus === 'error' ? (
               <>
-                <AlertCircle className="w-5 h-5" />
+                <RefreshCw className="w-5 h-5" />
                 <span className="text-sm font-medium">重新定位</span>
               </>
             ) : (
@@ -311,8 +360,8 @@ export default function Nearby() {
             style={{
               left: '50%',
               top: '50%',
-              width: `${radiusPixels * 2}%`,
-              height: `${radiusPixels * 2}%`,
+              width: `${radiusCircleSize.widthPct}%`,
+              height: `${radiusCircleSize.heightPct}%`,
               transform: 'translate(-50%, -50%)',
               transition: 'all 0.3s ease',
             }}
@@ -322,8 +371,8 @@ export default function Nearby() {
             style={{
               left: '50%',
               top: '50%',
-              width: `${radiusPixels}%`,
-              height: `${radiusPixels}%`,
+              width: `${radiusCircleSize.widthPct / 2}%`,
+              height: `${radiusCircleSize.heightPct / 2}%`,
               transform: 'translate(-50%, -50%)',
               transition: 'all 0.3s ease',
             }}
@@ -331,13 +380,10 @@ export default function Nearby() {
 
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20">
             <div className="relative">
-              <div
-                className="absolute inset-0 w-16 h-16 rounded-full bg-brand-cyan/30 animate-ripple"
-                style={{ marginLeft: 0, marginTop: 0 }}
-              />
+              <div className="absolute inset-0 w-16 h-16 rounded-full bg-brand-cyan/30 animate-ripple" />
               <div
                 className="absolute inset-0 w-16 h-16 rounded-full bg-brand-cyan/20 animate-ripple"
-                style={{ marginLeft: 0, marginTop: 0, animationDelay: '0.5s' }}
+                style={{ animationDelay: '0.5s' }}
               />
               <div className="w-16 h-16 rounded-full gradient-bg flex items-center justify-center shadow-2xl shadow-brand-purple/50 relative z-10">
                 <Sparkles className="w-8 h-8 text-white" />
@@ -347,7 +393,7 @@ export default function Nearby() {
 
           {filteredUsers.map((user, i) => {
             const { x, y } = projectToMap(user.location.lat, user.location.lng);
-            if (x < -5 || x > 105 || y < -5 || y > 105) return null;
+            if (x < -8 || x > 108 || y < -8 || y > 108) return null;
             return (
               <div
                 key={user.id}
