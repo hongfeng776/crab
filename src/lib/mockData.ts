@@ -1,0 +1,95 @@
+import type { Gift, User } from '../../shared/types';
+
+export const mockUsers: User[] = [
+  {
+    id: 'user-1',
+    nickname: '月下倾城',
+    avatar: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?image_size=square&prompt=portrait%20of%20a%20beautiful%20young%20asian%20woman%20with%20long%20black%20hair%2C%20soft%20lighting%2C%20professional%20photography%2C%20elegant',
+    age: 23,
+    gender: 'female',
+    distance: 0.3,
+    isOnline: true,
+    isVerified: true,
+    isHost: true,
+    tags: ['音乐', '旅行', '咖啡'],
+    signature: '愿你眼里有星辰，心中有山海',
+    lastActive: new Date().toISOString(),
+    location: { lat: 39.9042, lng: 116.4074 },
+    faceScore: 92,
+  },
+  {
+    id: 'user-2',
+    nickname: '小柠檬',
+    avatar: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?image_size=square&prompt=portrait%20of%20a%20stylish%20young%20asian%20woman%20with%20short%20hair%2C%20modern%20fashion%2C%20city%20background%2C%20photography',
+    age: 21,
+    gender: 'female',
+    distance: 0.8,
+    isOnline: true,
+    isVerified: true,
+    isHost: false,
+    tags: ['舞蹈', '时尚', '美食'],
+    signature: '生活需要一点甜',
+    lastActive: new Date().toISOString(),
+    location: { lat: 39.9082, lng: 116.4124 },
+    faceScore: 88,
+  },
+];
+
+export const mockGifts: Gift[] = [
+  { id: 'gift-1', name: '小心心', icon: '💗', value: 1 },
+  { id: 'gift-2', name: '棒棒糖', icon: '🍭', value: 5 },
+  { id: 'gift-3', name: '玫瑰花', icon: '🌹', value: 10 },
+  { id: 'gift-4', name: '皇冠', icon: '👑', value: 50 },
+  { id: 'gift-5', name: '火箭', icon: '🚀', value: 100 },
+  { id: 'gift-6', name: '城堡', icon: '🏰', value: 500 },
+];
+
+export const mockChatMessages: Record<string, any[]> = {
+  'conv-1': [
+    {
+      id: 'msg-1',
+      senderId: 'user-1',
+      receiverId: 'current',
+      content: '你好呀~',
+      type: 'text',
+      timestamp: new Date(Date.now() - 600000).toISOString(),
+      isRead: true,
+    },
+    {
+      id: 'msg-2',
+      senderId: 'current',
+      receiverId: 'user-1',
+      content: '嗨，看了你的直播，唱歌好好听！',
+      type: 'text',
+      timestamp: new Date(Date.now() - 500000).toISOString(),
+      isRead: true,
+    },
+    {
+      id: 'msg-3',
+      senderId: 'user-1',
+      receiverId: 'current',
+      content: '谢谢~你平时喜欢听歌吗',
+      type: 'text',
+      timestamp: new Date(Date.now() - 400000).toISOString(),
+      isRead: true,
+    },
+    {
+      id: 'msg-4',
+      senderId: 'current',
+      receiverId: 'user-1',
+      content: '喜欢的，尤其是轻音乐和R&B',
+      type: 'text',
+      timestamp: new Date(Date.now() - 350000).toISOString(),
+      isRead: true,
+    },
+    {
+      id: 'msg-5',
+      senderId: 'user-1',
+      receiverId: 'current',
+      content: '好呀，周末一起去喝咖啡吧~',
+      type: 'text',
+      timestamp: new Date(Date.now() - 300000).toISOString(),
+      isRead: false,
+    },
+  ],
+};
